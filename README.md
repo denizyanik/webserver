@@ -1,2 +1,2 @@
-# HTTP
-building a HTTP server from scratch 
+# web server
+building a web server from scratch 
