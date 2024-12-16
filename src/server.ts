@@ -1,4 +1,3 @@
-import { stat } from "fs";
 import * as net from "net";
 
 interface HttpRequest {
@@ -16,6 +15,7 @@ interface HttpResponse {
 
 class BasicWebServer {
   private server: net.Server;
+  private routes: Record<string, Record<string, (req: HttpRequest) => HttpResponse>> = {};
 
   constructor() {
     this.server = net.createServer();
@@ -49,6 +49,15 @@ class BasicWebServer {
     });
 
     return this;
+  }
+
+  // method that allows us to register routes dynamically
+  public registerRoute(method: string, path: string, handler: (req: HttpRequest) => HttpResponse) {
+    const upperMethod = method.toUpperCase();
+    if (!this.routes[upperMethod]) {
+      this.routes[upperMethod] = {};
+    }
+    this.routes[upperMethod][path] = handler;
   }
 
   /* HTTP request examples
@@ -85,130 +94,24 @@ class BasicWebServer {
   }
 
   private handleRequest(socket: net.Socket, request: HttpRequest) {
-    let response: HttpResponse;
-    // calls relevant function based on the HTTP request method
-    switch (request.method) {
-      case "GET":
-        response = this.handleGetRequest(request);
-        break;
-      case "POST":
-        response = this.handlePostRequest(request);
-        break;
-      case "PUT":
-        response = this.handlePutRequest(request);
-        break;
-      case "DELETE":
-        response = this.handleDeleteRequest(request);
-        break;
-      case "PATCH":
-        response = this.handlePatchRequest(request);
-        break;
-      default:
-        response = { statusCode: 405, contentType: "text/plain", body: "Method Not Allowed" };
-        break;
+    const methodRoutes = this.routes[request.method.toUpperCase()];
+    if (methodRoutes) {
+      const handler = methodRoutes[request.path];
+      if (handler) {
+        const response = handler(request);
+        this.sendResponse(socket, response);
+        return;
+      }
     }
 
-    this.sendResponse(socket, response);
+    this.sendResponse(socket, {
+      statusCode: 404,
+      contentType: "text/plain",
+      body: "Not Found",
+    });
   }
 
-  private handleGetRequest(request: HttpRequest): HttpResponse {
-    let body;
-    let statusCode;
-
-    switch (request.path) {
-      case "/":
-        body = "Welcome to the home page!";
-        statusCode = 200;
-        break;
-      case "/about":
-        body = "This is the about page!";
-        statusCode = 200;
-        break;
-      default:
-        body = "Not Found";
-        statusCode = 404;
-        break;
-    }
-
-    return { body, statusCode, contentType: "text/plain" };
-  }
-
-  private handlePostRequest(request: HttpRequest): HttpResponse {
-    let body;
-    let statusCode;
-
-    switch (request.path) {
-      case "/submit":
-        const parsedBody = this.parseBody(request.body);
-        console.log("Parsed Body:", parsedBody);
-        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
-        statusCode = 200;
-        break;
-      default:
-        statusCode = 404;
-        body = "Path not found";
-        break;
-    }
-
-    return { body, statusCode, contentType: "text/plain" };
-  }
-
-  private handlePutRequest(request: HttpRequest): HttpResponse {
-    let body;
-    let statusCode;
-
-    switch (request.path) {
-      case "/update":
-        const parsedBody = this.parseBody(request.body);
-        console.log("Parsed Body:", parsedBody);
-        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
-        statusCode = 200;
-        break;
-      default:
-        body = "Path not found";
-        statusCode = 404;
-        break;
-    }
-    return { body, statusCode, contentType: "text/plain" };
-  }
-
-  private handleDeleteRequest(request: HttpRequest): HttpResponse {
-    let body;
-    let statusCode;
-
-    switch (request.path) {
-      case "/delete":
-        statusCode = 200;
-        body = "Resource deleted successfully";
-        break;
-      default:
-        statusCode = 404;
-        body = "Path not found";
-        break;
-    }
-    return { body, statusCode, contentType: "text/plain" };
-  }
-
-  private handlePatchRequest(request: HttpRequest): HttpResponse {
-    let body;
-    let statusCode;
-
-    switch (request.path) {
-      case "/modify":
-        const parsedBody = this.parseBody(request.body);
-        console.log("Parsed Body:", parsedBody);
-        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
-        statusCode = 200;
-        break;
-      default:
-        statusCode = 404;
-        body = "Path not found";
-        break;
-    }
-    return { body, statusCode, contentType: "text/plain" };
-  }
-
-  private parseBody(body: string): Record<string, string> {
+  public parseBody(body: string): Record<string, string> {
     const params = new URLSearchParams(body);
     const parsedBody: Record<string, string> = {};
     for (const [key, value] of params) {
@@ -229,4 +132,65 @@ class BasicWebServer {
   }
 }
 
-const server = new BasicWebServer().listen(3000);
+const server = new BasicWebServer();
+
+// Register GET routes
+server.registerRoute("GET", "/", () => ({
+  statusCode: 200,
+  contentType: "text/plain",
+  body: "Welcome to the home page!",
+}));
+
+server.registerRoute("GET", "/about", () => ({
+  statusCode: 200,
+  contentType: "text/plain",
+  body: "This is the about page!",
+}));
+
+server.registerRoute("GET", "/not-found", () => ({
+  statusCode: 404,
+  contentType: "text/plain",
+  body: "Not Found",
+}));
+
+// Register POST routes
+server.registerRoute("POST", "/submit", (req) => {
+  const parsedBody = server.parseBody(req.body);
+  console.log("Parsed Body:", parsedBody);
+  return {
+    statusCode: 200,
+    contentType: "text/plain",
+    body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+  };
+});
+
+// Register PUT routes
+server.registerRoute("PUT", "/update", (req) => {
+  const parsedBody = server.parseBody(req.body);
+  console.log("Parsed Body:", parsedBody);
+  return {
+    statusCode: 200,
+    contentType: "text/plain",
+    body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+  };
+});
+
+// Register DELETE routes
+server.registerRoute("DELETE", "/delete", () => ({
+  statusCode: 200,
+  contentType: "text/plain",
+  body: "Resource deleted successfully",
+}));
+
+// Register PATCH routes
+server.registerRoute("PATCH", "/modify", (req) => {
+  const parsedBody = server.parseBody(req.body);
+  console.log("Parsed Body:", parsedBody);
+  return {
+    statusCode: 200,
+    contentType: "text/plain",
+    body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+  };
+});
+
+server.listen(3000);

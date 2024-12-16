@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const net = require("net");
 class BasicWebServer {
     constructor() {
+        this.routes = {};
         this.server = net.createServer();
     }
     listen(port) {
@@ -17,7 +18,8 @@ class BasicWebServer {
             // the data event gives raw bytes from the client. For a HTTP server, this data is a string that needs to be parsed
             socket.on("data", (data) => {
                 console.log("Received data:", data.toString());
-                this.handleRequest(socket, data.toString());
+                const request = this.parseRequest(data.toString());
+                this.handleRequest(socket, request);
             });
             socket.on("error", (err) => {
                 console.error("Socket error:", err);
@@ -27,6 +29,14 @@ class BasicWebServer {
             });
         });
         return this;
+    }
+    // method that allows us to register routes dynamically
+    registerRoute(method, path, handler) {
+        const upperMethod = method.toUpperCase();
+        if (!this.routes[upperMethod]) {
+            this.routes[upperMethod] = {};
+        }
+        this.routes[upperMethod][path] = handler;
     }
     /* HTTP request examples
   
@@ -58,43 +68,20 @@ class BasicWebServer {
         return { method, path, headers, body: bodyPart || "" };
     }
     handleRequest(socket, request) {
-        const parsed = this.parseRequest(request);
-        console.log("Parsed Request:", parsed);
-        // calls relevant function based on the HTTP request method
-        switch (parsed.method) {
-            case "GET":
-                this.handleGetRequest(socket, parsed.path);
-                break;
-            case "POST":
-                this.handlePostRequest(socket, parsed.path, parsed.body);
-                break;
-            default:
-                this.sendResponse(socket, 405, "Method Not Allowed", "Method not supported");
+        const methodRoutes = this.routes[request.method.toUpperCase()];
+        if (methodRoutes) {
+            const handler = methodRoutes[request.path];
+            if (handler) {
+                const response = handler(request);
+                this.sendResponse(socket, response);
+                return;
+            }
         }
-    }
-    handleGetRequest(socket, path) {
-        let responseBody = "Not Found";
-        let statusCode = 404;
-        if (path === "/") {
-            responseBody = "Welcome to the home page!";
-            statusCode = 200;
-        }
-        else if (path === "/about") {
-            responseBody = "This is the about page!";
-            statusCode = 200;
-        }
-        this.sendResponse(socket, statusCode, "text/plain", responseBody);
-    }
-    handlePostRequest(socket, path, body) {
-        if (path === "/submit") {
-            const parsedBody = this.parseBody(body);
-            console.log("Parsed Body:", parsedBody);
-            const responseBody = `Received your submission: ${JSON.stringify(parsedBody)}`;
-            this.sendResponse(socket, 200, "text/plain", responseBody);
-        }
-        else {
-            this.sendResponse(socket, 404, "Not Found", "Path not found");
-        }
+        this.sendResponse(socket, {
+            statusCode: 404,
+            contentType: "text/plain",
+            body: "Not Found",
+        });
     }
     parseBody(body) {
         const params = new URLSearchParams(body);
@@ -104,14 +91,66 @@ class BasicWebServer {
         }
         return parsedBody;
     }
-    sendResponse(socket, statusCode, contentType, body) {
-        const response = `HTTP/1.1 ${statusCode} ${statusCode === 200 ? "OK" : "Error"}\r\n` +
-            `Content-Type: ${contentType}\r\n` +
-            `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n` +
-            body;
-        socket.write(response);
+    sendResponse(socket, response) {
+        const rawResponse = `HTTP/1.1 ${response.statusCode} ${response.statusCode === 200 ? "OK" : "Error"}\r\n` +
+            `Content-Type: ${response.contentType}\r\n` +
+            `Content-Length: ${Buffer.byteLength(response.body)}\r\n\r\n` +
+            response.body;
+        socket.write(rawResponse);
         socket.end();
-        console.log(response);
     }
 }
-const server = new BasicWebServer().listen(3000);
+const server = new BasicWebServer();
+// Register GET routes
+server.registerRoute("GET", "/", () => ({
+    statusCode: 200,
+    contentType: "text/plain",
+    body: "Welcome to the home page!",
+}));
+server.registerRoute("GET", "/about", () => ({
+    statusCode: 200,
+    contentType: "text/plain",
+    body: "This is the about page!",
+}));
+server.registerRoute("GET", "/not-found", () => ({
+    statusCode: 404,
+    contentType: "text/plain",
+    body: "Not Found",
+}));
+// Register POST routes
+server.registerRoute("POST", "/submit", (req) => {
+    const parsedBody = server.parseBody(req.body);
+    console.log("Parsed Body:", parsedBody);
+    return {
+        statusCode: 200,
+        contentType: "text/plain",
+        body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+    };
+});
+// Register PUT routes
+server.registerRoute("PUT", "/update", (req) => {
+    const parsedBody = server.parseBody(req.body);
+    console.log("Parsed Body:", parsedBody);
+    return {
+        statusCode: 200,
+        contentType: "text/plain",
+        body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+    };
+});
+// Register DELETE routes
+server.registerRoute("DELETE", "/delete", () => ({
+    statusCode: 200,
+    contentType: "text/plain",
+    body: "Resource deleted successfully",
+}));
+// Register PATCH routes
+server.registerRoute("PATCH", "/modify", (req) => {
+    const parsedBody = server.parseBody(req.body);
+    console.log("Parsed Body:", parsedBody);
+    return {
+        statusCode: 200,
+        contentType: "text/plain",
+        body: `Received your submission: ${JSON.stringify(parsedBody)}`,
+    };
+});
+server.listen(3000);
