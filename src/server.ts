@@ -1,3 +1,4 @@
+import { stat } from "fs";
 import * as net from "net";
 
 interface HttpRequest {
@@ -93,6 +94,15 @@ class BasicWebServer {
       case "POST":
         response = this.handlePostRequest(request);
         break;
+      case "PUT":
+        response = this.handlePutRequest(request);
+        break;
+      case "DELETE":
+        response = this.handleDeleteRequest(request);
+        break;
+      case "PATCH":
+        response = this.handlePatchRequest(request);
+        break;
       default:
         response = { statusCode: 405, contentType: "text/plain", body: "Method Not Allowed" };
         break;
@@ -137,8 +147,64 @@ class BasicWebServer {
       default:
         statusCode = 404;
         body = "Path not found";
+        break;
     }
 
+    return { body, statusCode, contentType: "text/plain" };
+  }
+
+  private handlePutRequest(request: HttpRequest): HttpResponse {
+    let body;
+    let statusCode;
+
+    switch (request.path) {
+      case "/update":
+        const parsedBody = this.parseBody(request.body);
+        console.log("Parsed Body:", parsedBody);
+        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
+        statusCode = 200;
+        break;
+      default:
+        body = "Path not found";
+        statusCode = 404;
+        break;
+    }
+    return { body, statusCode, contentType: "text/plain" };
+  }
+
+  private handleDeleteRequest(request: HttpRequest): HttpResponse {
+    let body;
+    let statusCode;
+
+    switch (request.path) {
+      case "/delete":
+        statusCode = 200;
+        body = "Resource deleted successfully";
+        break;
+      default:
+        statusCode = 404;
+        body = "Path not found";
+        break;
+    }
+    return { body, statusCode, contentType: "text/plain" };
+  }
+
+  private handlePatchRequest(request: HttpRequest): HttpResponse {
+    let body;
+    let statusCode;
+
+    switch (request.path) {
+      case "/modify":
+        const parsedBody = this.parseBody(request.body);
+        console.log("Parsed Body:", parsedBody);
+        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
+        statusCode = 200;
+        break;
+      default:
+        statusCode = 404;
+        body = "Path not found";
+        break;
+    }
     return { body, statusCode, contentType: "text/plain" };
   }
 
