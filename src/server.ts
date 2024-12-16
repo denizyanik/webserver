@@ -1,5 +1,18 @@
 import * as net from "net";
 
+interface HttpRequest {
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+interface HttpResponse {
+  statusCode: number;
+  contentType: string;
+  body: string;
+}
+
 class BasicWebServer {
   private server: net.Server;
 
@@ -21,7 +34,8 @@ class BasicWebServer {
       // the data event gives raw bytes from the client. For a HTTP server, this data is a string that needs to be parsed
       socket.on("data", (data) => {
         console.log("Received data:", data.toString());
-        this.handleRequest(socket, data.toString());
+        const request = this.parseRequest(data.toString());
+        this.handleRequest(socket, request);
       });
 
       socket.on("error", (err) => {
@@ -55,12 +69,7 @@ class BasicWebServer {
     after the last header there is a blank line followed by the request body 
   */
 
-  private parseRequest(request: string): {
-    method: string;
-    path: string;
-    headers: Record<string, string>;
-    body: string;
-  } {
+  private parseRequest(request: string): HttpRequest {
     const [headerPart, bodyPart] = request.split("\r\n\r\n");
     const headerLines = headerPart.split("\r\n");
     const [method, path] = headerLines[0].split(" ");
@@ -74,63 +83,63 @@ class BasicWebServer {
     return { method, path, headers, body: bodyPart || "" };
   }
 
-  private handleRequest(socket: net.Socket, request: string) {
-    const parsed = this.parseRequest(request);
-    console.log("Parsed Request:", parsed);
-
+  private handleRequest(socket: net.Socket, request: HttpRequest) {
+    let response: HttpResponse;
     // calls relevant function based on the HTTP request method
-    switch (parsed.method) {
+    switch (request.method) {
       case "GET":
-        this.handleGetRequest(socket, parsed.path);
+        response = this.handleGetRequest(request);
         break;
       case "POST":
-        this.handlePostRequest(socket, parsed.path, parsed.body);
+        response = this.handlePostRequest(request);
         break;
       default:
-        this.sendResponse(socket, 405, "Method Not Allowed", "Method not supported");
+        response = { statusCode: 405, contentType: "text/plain", body: "Method Not Allowed" };
         break;
     }
+
+    this.sendResponse(socket, response);
   }
 
-  private handleGetRequest(socket: net.Socket, path: string) {
-    let responseBody;
+  private handleGetRequest(request: HttpRequest): HttpResponse {
+    let body;
     let statusCode;
 
-    switch (path) {
+    switch (request.path) {
       case "/":
-        responseBody = "Welcome to the home page!";
+        body = "Welcome to the home page!";
         statusCode = 200;
         break;
       case "/about":
-        responseBody = "This is the about page!";
+        body = "This is the about page!";
         statusCode = 200;
         break;
       default:
-        responseBody = "Not Found";
+        body = "Not Found";
         statusCode = 404;
         break;
     }
 
-    this.sendResponse(socket, statusCode, "text/plain", responseBody);
+    return { body, statusCode, contentType: "text/plain" };
   }
 
-  private handlePostRequest(socket: net.Socket, path: string, body: string) {
-    let responseBody;
+  private handlePostRequest(request: HttpRequest): HttpResponse {
+    let body;
     let statusCode;
 
-    switch (path) {
+    switch (request.path) {
       case "/submit":
-        const parsedBody = this.parseBody(body);
+        const parsedBody = this.parseBody(request.body);
         console.log("Parsed Body:", parsedBody);
-        responseBody = `Received your submission: ${JSON.stringify(parsedBody)}`;
+        body = `Received your submission: ${JSON.stringify(parsedBody)}`;
         statusCode = 200;
         break;
       default:
         statusCode = 404;
-        responseBody = "Path not found";
+        body = "Path not found";
     }
 
-    this.sendResponse(socket, 200, "text/plain", responseBody);
+    return { body, statusCode, contentType: "text/plain" };
   }
 
   private parseBody(body: string): Record<string, string> {
@@ -142,14 +151,15 @@ class BasicWebServer {
     return parsedBody;
   }
 
-  private sendResponse(socket: net.Socket, statusCode: number, contentType: string, body: string) {
-    const response =
-      `HTTP/1.1 ${statusCode} ${statusCode === 200 ? "OK" : "Error"}\r\n` +
-      `Content-Type: ${contentType}\r\n` +
-      `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n` +
-      body;
+  private sendResponse(socket: net.Socket, response: HttpResponse) {
+    const rawResponse =
+      `HTTP/1.1 ${response.statusCode} ${response.statusCode === 200 ? "OK" : "Error"}\r\n` +
+      `Content-Type: ${response.contentType}\r\n` +
+      `Content-Length: ${Buffer.byteLength(response.body)}\r\n\r\n` +
+      response.body;
 
-    socket.write(response);
+    socket.write(rawResponse);
+    socket.end();
   }
 }
 
